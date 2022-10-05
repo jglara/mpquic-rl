@@ -49,8 +49,8 @@ class PicoQuicServer( Host ):
     def config( self, **params ):
         super(PicoQuicServer, self).config( **params )
         self.cmd("cd {picopath}; ./picoquicdemo -M 2 -c ./certs/cert.pem -k ./certs/key.pem -p 4433 -w ./static/ &".format(
-            picopath='/home/ejogarv/DEV/picoquic', 
-            wwwpath='/home/ejogarv/DEV/mpquic-rl/mininet/static'))
+            picopath='../picoquic', 
+            wwwpath='./static'))
 
 
 class QuicheQuicServer( Host ):
@@ -58,22 +58,25 @@ class QuicheQuicServer( Host ):
     def config( self, **params ):
         super(QuicheQuicServer, self).config( **params )
         self.cmd("cd {quichepath};  RUST_LOG=info ./target/debug/mp_server --listen 10.0.3.10:4433 --cert ./apps/src/bin/cert.crt --key ./apps/src/bin/cert.key  --root {wwwpath} > /tmp/server.log&".format(
-            quichepath='/home/ejogarv/DEV/quiche', 
-            wwwpath='/home/ejogarv/DEV/mpquic-rl/mininet/static'))
+            quichepath='../quiche', 
+            wwwpath='./static'))
 
 
 class MultipathTopo( Topo ):
+    LTE = "lte"
+    WIFI = "wifi"
     def build(self, **opts):
+        info("Topo params {}".format(opts))
         sw1 = self.addSwitch("sw1")
         sw2 = self.addSwitch("sw2")
         sw3 = self.addSwitch("sw3")
         host = self.addHost( 'h1', ip='10.0.1.1/24', cls=MultiHost)
-        server = self.addHost( 's1', ip='10.0.3.10/24', cls=QuicheQuicServer, defaultRoute='via 10.0.3.1')
+        server = self.addHost( 's1', ip='10.0.3.10/24', cls=Host, defaultRoute='via 10.0.3.1')
         router = self.addHost( 'r1', ip='10.0.3.1/24', cls=Router)
 
 
-        linkConfig_lte = {'bw': 50, 'delay': '5ms', 'loss': 0, 'jitter': 0, 'max_queue_size': 10000 }
-        linkConfig_wifi = {'bw': 10, 'delay': '15ms', 'loss': 0, 'jitter': 0, 'max_queue_size': 10000 }
+        linkConfig_lte = opts[self.LTE]
+        linkConfig_wifi = opts[self.WIFI]
         #linkConfig_server = {'bw': 50, 'delay': '5ms', 'loss': 0, 'jitter': 0, 'max_queue_size': 10000 }
 #, 'txo': False, 'rxo': False
 
@@ -91,7 +94,9 @@ class MultipathTopo( Topo ):
 
 if __name__ == '__main__':
     setLogLevel('info')
-    topo=MultipathTopo()
+
+    topoparams = {"lte_bw": 50, 'wifi_bw': 10, 'lte_delay': '5ms', 'wifi_bw': '15ms'}
+    topo=MultipathTopo(**topoparams)
     net = Mininet(topo, switch=OVSBridge, controller=None)
     #net.addNAT().configDefault()
     net.start()
