@@ -16,6 +16,7 @@ class QuicheQuic(Experiment):
         self.file_path = params['file']['path']
         self.file_size = params['file']['size']
         self.repeat = params['repeat']
+        self.scheduler = params['scheduler']
 
     def prepare(self):
         super(QuicheQuic, self).prepare()
@@ -28,13 +29,14 @@ class QuicheQuic(Experiment):
     
         
     def get_server_cmd(self):
-        cmd="RUST_LOG={loglevel} {quichepath}/target/debug/mp_server --listen 10.0.3.10:4433 --cert {quichepath}/apps/src/bin/cert.crt --key {quichepath}/apps/src/bin/cert.key  --root {wwwpath} >> {log}&".format(
+        cmd="RUST_LOG={loglevel} {quichepath}/target/debug/mp_server --listen 10.0.3.10:4433 --cert {quichepath}/apps/src/bin/cert.crt --key {quichepath}/apps/src/bin/cert.key --root {wwwpath} --scheduler {sched}>> {log}&".format(
             quichepath='../quiche', 
+            sched=self.scheduler,
             wwwpath='./',
             log=self.server_log,
             loglevel=self.loglevel)
 
-        #print(cmd)
+        print(cmd)
         return cmd
 
     def get_client_cmd(self):
@@ -44,7 +46,7 @@ class QuicheQuic(Experiment):
             log=self.client_log,
             loglevel=self.loglevel)
         
-        #print(cmd)
+        print(cmd)
         return cmd
 
     def clean(self):

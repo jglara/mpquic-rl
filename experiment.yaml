@@ -2,13 +2,14 @@ experiment:
   type: quichequic
   repeat: 5
   pcap:
-    client: yes
-    server: yes
+    client: no
+    server: no
     snaplen: 1500
     output: ./logs/
   file: 
     path: test.bin
     size: 1M
+  scheduler: minRtt
   log:
     path: ./logs/
     level: info

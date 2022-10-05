@@ -61,11 +61,11 @@ class Experiment(object):
         
         if client_pcap:
             cmd = "tcpdump -i any -s {} -w {}client.pcap &".format(snaplen_pcap, output_pcap)
-            print(cmd)
+            #print(cmd)
             self.net.getNodeByName("h1").cmd(cmd)
         if server_pcap:
             cmd="tcpdump -i any -s {} -w {}server.pcap &".format(snaplen_pcap, output_pcap)
-            print(cmd)
+            #print(cmd)
             self.net.getNodeByName("h1").cmd(cmd)
         if server_pcap or client_pcap:
             logging.info("Activating tcpdump")
