@@ -21,7 +21,7 @@ topo:
     max_queue_size: 10000
   wifi:
     bw: 10
-    delay: '15ms'
+    delay: '10ms'
     loss: 0
     jitter: 0
     max_queue_size: 10000

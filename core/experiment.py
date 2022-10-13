@@ -1,4 +1,5 @@
 import logging
+import os
 
 
 class Experiment(object):
@@ -56,6 +57,12 @@ class Experiment(object):
         server_pcap = self.parameters['pcap']['server']
         snaplen_pcap = self.parameters['pcap']['snaplen']
         output_pcap = self.parameters['pcap']['output']
+
+        try:
+            os.mkdir(output_pcap)
+        except OSError as error:
+            pass
+
 
         #import pdb; pdb.set_trace()
         

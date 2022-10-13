@@ -1,0 +1,18 @@
+experiment:
+  type: quichequic
+  repeat: 5
+  pcap:
+    client: no
+    server: no
+    snaplen: 1500
+    output: ./logs_rtt/
+  file: 
+    path: test.bin
+    size: 1M
+  scheduler: minRtt
+  log:
+    path: ./logs_rtt/
+    level: info
+
+
+

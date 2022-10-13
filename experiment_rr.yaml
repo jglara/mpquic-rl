@@ -5,13 +5,13 @@ experiment:
     client: no
     server: no
     snaplen: 1500
-    output: ./logs/
+    output: ./logs_rr/
   file: 
     path: test.bin
     size: 1M
-  scheduler: minRtt
+  scheduler: rr
   log:
-    path: ./logs/
+    path: ./logs_rr/
     level: info
 
 
