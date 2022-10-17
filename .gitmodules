@@ -1,4 +1,4 @@
 [submodule "quiche"]
 	path = quiche
-	url = https://github.com/qdeconinck/quiche.git
+	url = https://github.com/jglara/quiche.git
 	branch = multipath
