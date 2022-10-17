@@ -5,8 +5,10 @@ import subprocess
 
 from logging import info
 
+
 class QuicheQuic(Experiment):
     NAME = "quichequic"    
+    QUICHEPATH = "./mpquic-quiche"
     
     def __init__(self, net, params):
         super(QuicheQuic, self).__init__(net, params)
@@ -31,10 +33,10 @@ class QuicheQuic(Experiment):
 
         
     def get_server_cmd(self, instance):
-        cmd="RUST_LOG={loglevel} {quichepath}/target/debug/mp_server --listen 10.0.3.10:4433 --cert {quichepath}/apps/src/bin/cert.crt --key {quichepath}/apps/src/bin/cert.key --root {wwwpath} --scheduler {sched} --path-stats-output {csv_path}/{sched}{i}.csv >> {log}/server{i}.log&".format(
+        cmd="RUST_LOG={loglevel} {quichepath}/target/debug/mp_server --listen 10.0.3.10:4433 --cert {quichepath}/src/bin/cert.crt --key {quichepath}/src/bin/cert.key --root {wwwpath} --scheduler {sched} --path-stats-output {csv_path}/{sched}{i}.csv >> {log}/server{i}.log&".format(
             csv_path=self.log_path,
             i=instance,
-            quichepath='../quiche', 
+            quichepath=self.QUICHEPATH, 
             sched=self.scheduler,
             wwwpath='./',
             log=self.log_path,
@@ -47,7 +49,7 @@ class QuicheQuic(Experiment):
         cmd="RUST_LOG={loglevel} {quichepath}/target/debug/mp_client -l 10.0.1.1:5555 -w 10.0.2.1:6666 --url https://10.0.3.10:4433/{file} --download-stats-output {csv_path}/download{i}.csv>> {log}/client{i}.log".format(
             csv_path=self.log_path,
             i=instance,
-            quichepath='../quiche', 
+            quichepath=self.QUICHEPATH, 
             file=self.file_path,
             log=self.log_path,
             loglevel=self.loglevel)
