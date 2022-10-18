@@ -33,7 +33,7 @@ class QuicheQuic(Experiment):
 
         
     def get_server_cmd(self, instance):
-        cmd="RUST_LOG={loglevel} {quichepath}/target/debug/mp_server --listen 10.0.3.10:4433 --cert {quichepath}/src/bin/cert.crt --key {quichepath}/src/bin/cert.key --root {wwwpath} --scheduler {sched} --path-stats-output {csv_path}/{sched}{i}.csv >> {log}/server{i}.log&".format(
+        cmd="RUST_LOG={loglevel} {quichepath}/target/debug/mp_server --listen 10.0.3.10:4433 --cert {quichepath}/src/bin/cert.crt --key {quichepath}/src/bin/cert.key --root {wwwpath} --scheduler {sched} --path-stats-output {csv_path}/{sched}{i}.csv > {log}/server{i}.log&".format(
             csv_path=self.log_path,
             i=instance,
             quichepath=self.QUICHEPATH, 
@@ -46,7 +46,7 @@ class QuicheQuic(Experiment):
         return cmd
 
     def get_client_cmd(self,instance):
-        cmd="RUST_LOG={loglevel} {quichepath}/target/debug/mp_client -l 10.0.1.1:5555 -w 10.0.2.1:6666 --url https://10.0.3.10:4433/{file} --download-stats-output {csv_path}/download{i}.csv>> {log}/client{i}.log".format(
+        cmd="SSLKEYLOGFILE={csv_path}/keylog{i}.log RUST_LOG={loglevel} {quichepath}/target/debug/mp_client -l 10.0.1.1:5555 -w 10.0.2.1:6666 --url https://10.0.3.10:4433/{file} --download-stats-output {csv_path}/download{i}.csv> {log}/client{i}.log".format(
             csv_path=self.log_path,
             i=instance,
             quichepath=self.QUICHEPATH, 

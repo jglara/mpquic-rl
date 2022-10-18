@@ -118,6 +118,21 @@ fn main() {
     config.set_disable_active_migration(true);
     config.set_multipath(true);
 
+    // Add keylogging support
+    let mut keylog = None;
+    if let Some(keylog_path) = std::env::var_os("SSLKEYLOGFILE") {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(keylog_path)
+            .unwrap();
+
+        keylog = Some(file);
+        config.log_keys();
+    }
+
+
+
     // Generate a random source connection ID for the connection.
     let mut scid = [0; quiche::MAX_CONN_ID_LEN];
     let rng = SystemRandom::new();
@@ -132,6 +147,12 @@ fn main() {
     let mut conn =
         quiche::connect(url.domain(), &scid, local_addr, peer_addr, &mut config)
             .unwrap();
+
+    if let Some(keylog) = &mut keylog {
+        if let Ok(keylog) = keylog.try_clone() {
+            conn.set_keylog(Box::new(keylog));
+        }
+    }
 
     info!(
         "connecting to {:} from {:} with scid {}",

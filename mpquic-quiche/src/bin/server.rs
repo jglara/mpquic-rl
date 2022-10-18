@@ -79,10 +79,10 @@ impl Scheduler for MinRttScheduler {
 
     fn next_path(&mut self, conn: &quiche::Connection) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
         // always try each path at least once
-        if let Some(p) = conn.path_stats().find(|p| p.sent == 0) {
+        if let Some(p) = conn.path_stats().find(|p|p.sent == 0) {
             Some((p.local_addr, p.peer_addr))
         } else {
-            conn.path_stats().min_by(|p1, p2| p1.rtt.cmp(&p2.rtt) )
+            conn.path_stats().filter(|p| p.active && p.bytes_in_flight < p.cwnd).min_by(|p1, p2| p1.rtt.cmp(&p2.rtt) )
             .map(|p| (p.local_addr, p.peer_addr))
         }
     }
@@ -94,12 +94,15 @@ impl Scheduler for RoundRobinScheduler {
     }
 
     fn next_path(&mut self, conn: &quiche::Connection) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
+        
         self.next = if self.next >= conn.path_stats().count() {
             0
         } else {
             self.next + 1
         };
+        //conn.path_stats().cycle().filter(|p| p.active && p.bytes_in_flight < p.cwnd).nth(self.next).map(|p| (p.local_addr, p.peer_addr))
         conn.path_stats().nth(self.next).map(|p| (p.local_addr, p.peer_addr))
+        
     }
 }
 
