@@ -33,7 +33,8 @@ class QuicheQuic(Experiment):
 
         
     def get_server_cmd(self, instance):
-        cmd="RUST_LOG={loglevel} {quichepath}/target/debug/mp_server --listen 10.0.3.10:4433 --cert {quichepath}/src/bin/cert.crt --key {quichepath}/src/bin/cert.key --root {wwwpath} --scheduler {sched} --path-stats-output {csv_path}/{sched}{i}.csv > {log}/server{i}.log&".format(
+        #
+        cmd="QLOGDIR={csv_path} RUST_LOG={loglevel} {quichepath}/target/debug/mp_server --listen 10.0.3.10:4433 --cert {quichepath}/src/bin/cert.crt --key {quichepath}/src/bin/cert.key --root {wwwpath} --scheduler {sched} --path-stats-output {csv_path}/{sched}{i}.csv --conn-stats-output {csv_path}/conn-{i}.csv> {log}/server{i}.log&".format(
             csv_path=self.log_path,
             i=instance,
             quichepath=self.QUICHEPATH, 
@@ -46,7 +47,9 @@ class QuicheQuic(Experiment):
         return cmd
 
     def get_client_cmd(self,instance):
-        cmd="SSLKEYLOGFILE={csv_path}/keylog{i}.log RUST_LOG={loglevel} {quichepath}/target/debug/mp_client -l 10.0.1.1:5555 -w 10.0.2.1:6666 --url https://10.0.3.10:4433/{file} --download-stats-output {csv_path}/download{i}.csv> {log}/client{i}.log".format(
+        #SSLKEYLOGFILE={csv_path}/keylog{i}.log 
+        #
+        cmd="QLOGDIR={csv_path} RUST_LOG={loglevel} {quichepath}/target/debug/mp_client -l 10.0.1.1:5555 -w 10.0.2.1:6666 --url https://10.0.3.10:4433/{file} --download-stats-output {csv_path}/download{i}.csv> {log}/client{i}.log".format(
             csv_path=self.log_path,
             i=instance,
             quichepath=self.QUICHEPATH, 
@@ -64,7 +67,10 @@ class QuicheQuic(Experiment):
         
 
     def run(self):
+        import time
         n = self.file_size = self.repeat
         for i in range(0,n):
+            time.sleep(1)
             self.net.getNodeByName('s1').cmd(self.get_server_cmd(i))
+            time.sleep(1)
             self.net.getNodeByName('h1').cmd(self.get_client_cmd(i))

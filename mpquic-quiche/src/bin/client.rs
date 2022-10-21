@@ -111,8 +111,8 @@ fn main() {
     config.set_max_recv_udp_payload_size(MAX_DATAGRAM_SIZE);
     config.set_max_send_udp_payload_size(MAX_DATAGRAM_SIZE);
     config.set_initial_max_data(10_000_000);
-    config.set_initial_max_stream_data_bidi_local(1_000_000);
-    config.set_initial_max_stream_data_bidi_remote(1_000_000);
+    config.set_initial_max_stream_data_bidi_local(2_000_000);
+    config.set_initial_max_stream_data_bidi_remote(2_000_000);
     config.set_initial_max_streams_bidi(100);
     config.set_initial_max_streams_uni(100);
     config.set_disable_active_migration(true);
@@ -131,7 +131,8 @@ fn main() {
         config.log_keys();
     }
 
-
+    
+  
 
     // Generate a random source connection ID for the connection.
     let mut scid = [0; quiche::MAX_CONN_ID_LEN];
@@ -152,6 +153,17 @@ fn main() {
         if let Ok(keylog) = keylog.try_clone() {
             conn.set_keylog(Box::new(keylog));
         }
+    }
+
+    if let Some(dir) = std::env::var_os("QLOGDIR") {
+        let id = format!("{:?}", scid);
+        let writer = make_qlog_writer(&dir, "client", &id);
+
+        conn.set_qlog(
+                std::boxed::Box::new(writer),
+                "quiche-client qlog".to_string(),
+                format!("{} id={}", "quiche-client qlog", id),
+          );
     }
 
     info!(
@@ -444,4 +456,24 @@ fn lowest_latency_scheduler(
     conn.path_stats()
         .sorted_by_key(|p| p.rtt)
         .map(|p| (p.local_addr, p.peer_addr))
+}
+
+
+
+/// Makes a buffered writer for a qlog.
+pub fn make_qlog_writer(
+    dir: &std::ffi::OsStr, role: &str, id: &str,
+) -> std::io::BufWriter<std::fs::File> {
+    let mut path = std::path::PathBuf::from(dir);
+    let filename = format!("{}-{}.sqlog", role, id);
+    path.push(filename);
+
+    match std::fs::File::create(&path) {
+        Ok(f) => std::io::BufWriter::new(f),
+
+        Err(e) => panic!(
+            "Error creating qlog file attempted path was {:?}: {}",
+            path, e
+        ),
+    }
 }

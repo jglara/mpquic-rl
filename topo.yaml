@@ -14,7 +14,7 @@
 #           max_queue_size: queue limit parameter for netem"""
 topo:
   lte:
-    bw: 50
+    bw: 20
     delay: '5ms'
     loss: 0
     jitter: 0

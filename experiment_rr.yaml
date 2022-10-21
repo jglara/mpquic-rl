@@ -3,7 +3,7 @@ experiment:
   repeat: 5
   pcap:
     client: no
-    server: no
+    server: yes
     snaplen: 1500
     output: ./logs_rr/
   file: 

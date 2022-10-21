@@ -29,6 +29,9 @@ struct ServerCli {
 
     #[clap(value_parser, long, short)]
     path_stats_output: String, // File to output path stats
+
+    #[clap(value_parser, long)]
+    conn_stats_output: String, // File to output conn stats
 }
 
 const MAX_BUF_SIZE: usize = 65507;
@@ -56,6 +59,18 @@ struct PathStatsRecord<'a> {
     bif: usize,
     rtt: u128,
 }
+
+#[derive(Debug, serde::Serialize)]
+struct ConnStatsRecord<'a> {
+    elapsed: u128,
+    trace_id: &'a str,
+    max_send_burst: usize,
+    sent_bytes: usize,
+    sent_bytes_total: u64,
+    lost_bytes_total: u64,
+    retrans_bytes_total: u64,
+}
+
 
 trait Scheduler {
     fn start(&mut self, conn: &quiche::Connection);
@@ -120,6 +135,7 @@ fn main() {
     let mut out = [0; MAX_DATAGRAM_SIZE];
 
     let mut path_stats_wrt = csv::Writer::from_path(cli.path_stats_output).unwrap();
+    let mut conn_stats_wrt = csv::Writer::from_path(cli.conn_stats_output).unwrap();
     let server_start = std::time::Instant::now();
 
     // Create the UDP listening socket, and register it with the event loop.
@@ -154,8 +170,8 @@ fn main() {
     config.set_max_recv_udp_payload_size(MAX_DATAGRAM_SIZE);
     config.set_max_send_udp_payload_size(MAX_DATAGRAM_SIZE);
     config.set_initial_max_data(10_000_000);
-    config.set_initial_max_stream_data_bidi_local(1_000_000);
-    config.set_initial_max_stream_data_bidi_remote(1_000_000);
+    config.set_initial_max_stream_data_bidi_local(2_000_000);
+    config.set_initial_max_stream_data_bidi_remote(2_000_000);
     config.set_initial_max_stream_data_uni(1_000_000);
     config.set_initial_max_streams_bidi(100);
     config.set_initial_max_streams_uni(100);
@@ -177,8 +193,7 @@ fn main() {
         "minRtt" => Box::new(MinRttScheduler {}),
         _ => panic!("Invalid scheduler")
     };
-
-  
+    
     'main: loop {
 
         let timeout = if continue_write {
@@ -324,7 +339,7 @@ fn main() {
 
                 debug!("New connection: dcid={:?} scid={:?}", hdr.dcid, scid);
 
-                let conn = quiche::accept(
+                let mut conn = quiche::accept(
                     &scid,
                     odcid.as_ref(),
                     local_addr,
@@ -332,12 +347,24 @@ fn main() {
                     &mut config,
                 )
                 .unwrap();
+                
+
+                if let Some(dir) = std::env::var_os("QLOGDIR") {
+                    let id = format!("{:?}", &scid);
+                    let writer = make_qlog_writer(&dir, "server", &id);
+
+                    conn.set_qlog(
+                        std::boxed::Box::new(writer),
+                        "quiche-server qlog".to_string(),
+                        format!("{} id={}", "quiche-server qlog", id),
+                    );
+                }
 
                 oclient.get_or_insert(Client { 
                     conn, 
                     partial_responses: HashMap::new(),
                     loss_rate: 0.0,
-                    max_send_burst: MAX_BUF_SIZE,})
+                    max_send_burst: MAX_BUF_SIZE * 75 / 100,})
             } else {
                 debug!("Incoming packet for connection dcid={:?} ", hdr.dcid);  
                 oclient.as_mut().unwrap()
@@ -364,6 +391,7 @@ fn main() {
             if client.conn.is_in_early_data() || client.conn.is_established() {
                 // Handle writable streams.
                 for stream_id in client.conn.writable() {
+                    //info!("cap {:?} {:?} {:?} {:?} {:?}", client.conn.tx_cap, client.conn.tx_data, client.conn.max_tx_data, client.conn.stream_capacity(stream_id), client.conn.stream_send_max_data(stream_id));
                     handle_writable(client, stream_id);
                 }
 
@@ -392,6 +420,7 @@ fn main() {
                     }
                 }
             }
+
 
             handle_path_events(client);
 
@@ -435,14 +464,15 @@ fn main() {
                 client.loss_rate = loss_rate;
             }
 
-            let max_send_burst =
-                client.conn.send_quantum().min(client.max_send_burst) /
+            let max_send_burst = client.max_send_burst / max_datagram_size * max_datagram_size;
+                 /*client.conn.send_quantum().min(client.max_send_burst) /
                     max_datagram_size *
-                    max_datagram_size;
+                    max_datagram_size;*/
             let mut total_write = 0;
 
             
                 
+            
             sched.start(&client.conn);
             
             'write: while total_write < max_send_burst {                
@@ -488,11 +518,10 @@ fn main() {
             }
 
             //info!("Sending over paths: {:?}", scheduled_tuples);
-            //client.conn.path_stats().for_each(|p| debug!("{} {}: s={} r={} cwnd={} bif={} rtt={}", p.local_addr, p.peer_addr, p.sent_bytes, p.recv_bytes, p.cwnd, p.bytes_in_flight, p.rtt.as_millis()));
-
             client.conn.path_stats().for_each(|p| {
                 let srtt = if p.rtt.as_millis() == 333 {0} else {p.rtt.as_millis()};
 
+                
                 path_stats_wrt.serialize(PathStatsRecord {
                     elapsed: server_start.elapsed().as_millis(),
                     local: &p.local_addr, 
@@ -503,10 +532,20 @@ fn main() {
                     bif: p.bytes_in_flight, 
                     rtt: srtt,
                 }).unwrap()
-            });
+            }); 
+
+            conn_stats_wrt.serialize( ConnStatsRecord {
+                elapsed: server_start.elapsed().as_millis(),
+                trace_id: client.conn.trace_id(),
+                max_send_burst: max_send_burst,
+                sent_bytes: total_write,
+                sent_bytes_total: client.conn.stats().sent_bytes,
+                lost_bytes_total: client.conn.stats().lost_bytes,
+                retrans_bytes_total: client.conn.stats().stream_retrans_bytes,
+            }).unwrap();
 
 
-            
+
 
             if client.conn.is_closed() {
                     println!(
@@ -588,7 +627,7 @@ fn validate_token<'a>(
 
 
 /// Handles incoming HTTP/0.9 requests.
-fn handle_stream(client: &mut Client, stream_id: u64, buf: &[u8], root: &str) {
+fn handle_stream(client: &mut Client, stream_id: u64, buf: &[u8], root: &str) -> usize {
     let conn = &mut client.conn;
 
     if buf.len() > 4 && &buf[..4] == b"GET " {
@@ -628,7 +667,7 @@ fn handle_stream(client: &mut Client, stream_id: u64, buf: &[u8], root: &str) {
 
             Err(e) => {
                 error!("{} stream send failed {:?}", conn.trace_id(), e);
-                return;
+                return 0;
             },
         };
 
@@ -636,19 +675,22 @@ fn handle_stream(client: &mut Client, stream_id: u64, buf: &[u8], root: &str) {
             let response = PartialResponse { body, written };
             client.partial_responses.insert(stream_id, response);
         }
+        return written;
     }
+
+    return 0;
 }
 
 
 /// Handles newly writable streams.
-fn handle_writable(client: &mut Client, stream_id: u64) {
+fn handle_writable(client: &mut Client, stream_id: u64) -> usize {
     let conn = &mut client.conn;
 
     debug!("{} stream {} is writable", conn.trace_id(), stream_id);
 
     if !client.partial_responses.contains_key(&stream_id) {
         debug!("{} stream with no partial responses", stream_id);
-        return;
+        return 0;
     }
 
     let resp = client.partial_responses.get_mut(&stream_id).unwrap();
@@ -663,7 +705,7 @@ fn handle_writable(client: &mut Client, stream_id: u64) {
             client.partial_responses.remove(&stream_id);
 
             error!("{} stream send failed {:?}", conn.trace_id(), e);
-            return;
+            return 0;
         },
     };
     
@@ -673,6 +715,8 @@ fn handle_writable(client: &mut Client, stream_id: u64) {
     if resp.written == resp.body.len() {
         client.partial_responses.remove(&stream_id);
     }
+
+    written
 }
 
 
@@ -769,4 +813,20 @@ fn generate_cid_and_reset_token<T: SecureRandom>(
 }
 
 
+/// Makes a buffered writer for a qlog.
+pub fn make_qlog_writer(
+    dir: &std::ffi::OsStr, role: &str, id: &str,
+) -> std::io::BufWriter<std::fs::File> {
+    let mut path = std::path::PathBuf::from(dir);
+    let filename = format!("{}-{}.sqlog", role, id);
+    path.push(filename);
 
+    match std::fs::File::create(&path) {
+        Ok(f) => std::io::BufWriter::new(f),
+
+        Err(e) => panic!(
+            "Error creating qlog file attempted path was {:?}: {}",
+            path, e
+        ),
+    }
+}

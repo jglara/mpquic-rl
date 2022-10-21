@@ -21,3 +21,11 @@ https://ylim.mybluemix.net/mptcp_ecf/ecf-techreport.pdf
 sudo python3 ./runner.py -t topo.yaml
 
 Change topo.yaml to define different parameters of bw of delay in each path
+
+### Running experiment
+
+sudo python3 ./runner.py -t topo.yaml -x experiment.yaml
+
+There are two experiments defined:
+- experiment_rr.yaml for rr scheduler 
+- experiment_rtt.yaml for min rtt scheduler
