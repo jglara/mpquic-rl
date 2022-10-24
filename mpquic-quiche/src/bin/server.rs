@@ -69,6 +69,12 @@ struct ConnStatsRecord<'a> {
     sent_bytes_total: u64,
     lost_bytes_total: u64,
     retrans_bytes_total: u64,
+    tx_cap: usize,
+    max_tx_data: u64,
+    stream_written: usize,
+    pending: usize,
+    max_off: u64,
+    off_back: u64,
 }
 
 
@@ -121,6 +127,38 @@ impl Scheduler for RoundRobinScheduler {
     }
 }
 
+struct ECFScheduler {
+    waiting: bool,
+}
+
+impl Scheduler for ECFScheduler {
+    fn start(&mut self, conn: &quiche::Connection) {
+        // calculate bestpath and secondpath with cwd,rtt,rttvar 
+        todo!()
+    }
+
+    fn next_path(&mut self, conn: &quiche::Connection) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
+        // select bestpath, secondpath or nothing if waiting for bestpath is better
+        todo!()
+    }
+}
+
+struct BLESTScheduler {
+
+}
+
+impl Scheduler for BLESTScheduler {
+    fn start(&mut self, conn: &quiche::Connection) {
+        // calculate bestpath and secondpath with cwd,rtt and stream available sendbuffer
+        todo!()
+    }
+
+    fn next_path(&mut self, conn: &quiche::Connection) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
+        // select bestpath, secondpath or nothing if waiting for bestpath is better to avoid HoL
+        todo!()
+    }
+}
+
 fn main() {
     env_logger::init();
     let cli = ServerCli::parse();
@@ -170,8 +208,8 @@ fn main() {
     config.set_max_recv_udp_payload_size(MAX_DATAGRAM_SIZE);
     config.set_max_send_udp_payload_size(MAX_DATAGRAM_SIZE);
     config.set_initial_max_data(10_000_000);
-    config.set_initial_max_stream_data_bidi_local(2_000_000);
-    config.set_initial_max_stream_data_bidi_remote(2_000_000);
+    config.set_initial_max_stream_data_bidi_local(500_000);
+    config.set_initial_max_stream_data_bidi_remote(500_000);
     config.set_initial_max_stream_data_uni(1_000_000);
     config.set_initial_max_streams_bidi(100);
     config.set_initial_max_streams_uni(100);
@@ -187,10 +225,13 @@ fn main() {
     let local_addr = socket.local_addr().unwrap();
     let mut oclient: Option<Client> = None;
     let mut continue_write = false;
+    let mut tx_cap = 0;
 
     let mut sched: Box<dyn Scheduler> = match cli.scheduler.as_str() {
         "rr" => Box::new(RoundRobinScheduler {next: 0}),
         "minRtt" => Box::new(MinRttScheduler {}),
+        "blest" => Box::new(BLESTScheduler {}),
+        "ecf" => Box::new(ECFScheduler {waiting: false}),
         _ => panic!("Invalid scheduler")
     };
     
@@ -387,13 +428,7 @@ fn main() {
             };
 
             debug!("{} processed {} bytes", client.conn.trace_id(), read);
-
             if client.conn.is_in_early_data() || client.conn.is_established() {
-                // Handle writable streams.
-                for stream_id in client.conn.writable() {
-                    //info!("cap {:?} {:?} {:?} {:?} {:?}", client.conn.tx_cap, client.conn.tx_data, client.conn.max_tx_data, client.conn.stream_capacity(stream_id), client.conn.stream_send_max_data(stream_id));
-                    handle_writable(client, stream_id);
-                }
 
                 // Process all readable streams.
                 for s in client.conn.readable() {
@@ -421,7 +456,6 @@ fn main() {
                 }
             }
 
-
             handle_path_events(client);
 
             // See whether source Connection IDs have been retired.
@@ -445,12 +479,27 @@ fn main() {
 
         } //read loop
 
+        //debug!("{} done reading", client.conn.trace_id());
+
         continue_write = false;
         // Generate outgoing QUIC packets for all active connections and send
         // them on the UDP socket, until quiche reports that there are no more
         // packets to be sent.
         if let Some(client) = oclient.as_mut() {
-            debug!("{} done reading", client.conn.trace_id());
+
+            tx_cap = client.conn.tx_cap;
+            let mut max_off =0;
+            let mut off_back= 0;
+            // Handle writable streams.
+            for stream_id in client.conn.writable() {
+                //info!("cap {:?} {:?} {:?}", client.conn.tx_cap, client.conn.tx_data, client.conn.max_tx_data);
+                handle_writable(client, stream_id);
+                if let Ok((max_off_, off_back_)) = client.conn.stream_send_offset(stream_id) {
+                    max_off = max_off_;
+                    off_back = off_back_;
+                }
+            }    
+
 
             let max_datagram_size = client.conn.max_send_udp_payload_size();
             // Reduce max_send_burst by 25% if loss is increasing more than 0.1%.
@@ -464,14 +513,11 @@ fn main() {
                 client.loss_rate = loss_rate;
             }
 
-            let max_send_burst = client.max_send_burst / max_datagram_size * max_datagram_size;
-                 /*client.conn.send_quantum().min(client.max_send_burst) /
+            let max_send_burst = /*client.max_send_burst / max_datagram_size * max_datagram_size;*/
+                 client.conn.send_quantum().min(client.max_send_burst) /
                     max_datagram_size *
-                    max_datagram_size;*/
+                    max_datagram_size;
             let mut total_write = 0;
-
-            
-                
             
             sched.start(&client.conn);
             
@@ -534,14 +580,21 @@ fn main() {
                 }).unwrap()
             }); 
 
+            //info!("cap {:?} {:?} {:?}", client.conn.tx_cap, client.conn.tx_data, client.conn.max_tx_data);
             conn_stats_wrt.serialize( ConnStatsRecord {
                 elapsed: server_start.elapsed().as_millis(),
                 trace_id: client.conn.trace_id(),
                 max_send_burst: max_send_burst,
                 sent_bytes: total_write,
+                tx_cap: tx_cap,
+                max_off: max_off,
+                off_back: off_back,
+                max_tx_data: client.conn.max_tx_data,
                 sent_bytes_total: client.conn.stats().sent_bytes,
                 lost_bytes_total: client.conn.stats().lost_bytes,
                 retrans_bytes_total: client.conn.stats().stream_retrans_bytes,
+                stream_written: client.partial_responses.iter().map(|(_, r)| r.written).sum(),
+                pending: client.partial_responses.iter().map(|(_, r)| r.body.len() - r.written).sum(),
             }).unwrap();
 
 

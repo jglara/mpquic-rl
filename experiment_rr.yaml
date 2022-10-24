@@ -5,14 +5,13 @@ experiment:
     client: no
     server: yes
     snaplen: 1500
-    output: ./logs_rr/
   file: 
     path: test.bin
     size: 1M
   scheduler: rr
   log:
-    path: ./logs_rr/
     level: info
+  qlog: yes
 
 
 

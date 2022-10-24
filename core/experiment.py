@@ -9,12 +9,13 @@ class Experiment(object):
 	`NAME` attribute.
 	"""
     
-    def __init__(self, net, parameters):
+    def __init__(self, net, parameters, output_dir):
         """
         Instantiation of this base class only load the experiment parameter
         """
         self.parameters = parameters
         self.net = net
+        self.output_dir = output_dir
 
     def classic_run(self):
         """
@@ -56,22 +57,16 @@ class Experiment(object):
         client_pcap = self.parameters['pcap']['client']
         server_pcap = self.parameters['pcap']['server']
         snaplen_pcap = self.parameters['pcap']['snaplen']
-        output_pcap = self.parameters['pcap']['output']
-
-        try:
-            os.mkdir(output_pcap)
-        except OSError as error:
-            pass
 
 
         #import pdb; pdb.set_trace()
         
         if client_pcap:
-            cmd = "tcpdump -i any -s {} -w {}client.pcap &".format(snaplen_pcap, output_pcap)
+            cmd = "tcpdump -i any -s {} -w {}/client.pcap &".format(snaplen_pcap, self.output_dir)
             #print(cmd)
             self.net.getNodeByName("h1").cmd(cmd)
         if server_pcap:
-            cmd="tcpdump -i any -s {} -w {}server.pcap &".format(snaplen_pcap, output_pcap)
+            cmd="tcpdump -i any -s {} -w {}/server.pcap &".format(snaplen_pcap, self.output_dir)
             #print(cmd)
             self.net.getNodeByName("h1").cmd(cmd)
         if server_pcap or client_pcap:

@@ -14,13 +14,17 @@ https://ylim.mybluemix.net/mptcp_ecf/ecf-techreport.pdf
 
 ### Topology
 
-![Image](./network.png)
+![Image](./network_img.png)
 
 ### Running topology
 
 sudo python3 ./runner.py -t topo.yaml
 
 Change topo.yaml to define different parameters of bw of delay in each path
+
+There are the following topologies defined:
+
+- topo1: 
 
 ### Running experiment
 
