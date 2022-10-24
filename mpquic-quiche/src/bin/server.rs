@@ -89,6 +89,25 @@ struct RoundRobinScheduler{
     next: usize,
 }
 
+
+impl Scheduler for RoundRobinScheduler {
+    fn start(&mut self, conn: &quiche::Connection) {
+        self.next = conn.path_stats().count();
+    }
+
+    fn next_path(&mut self, conn: &quiche::Connection) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
+        
+        self.next = if self.next >= conn.path_stats().count() {
+            0
+        } else {
+            self.next + 1
+        };
+        //conn.path_stats().cycle().filter(|p| p.active && p.bytes_in_flight < p.cwnd).nth(self.next).map(|p| (p.local_addr, p.peer_addr))
+        conn.path_stats().nth(self.next).map(|p| (p.local_addr, p.peer_addr))
+        
+    }
+}
+
 struct MinRttScheduler {
 
 }
@@ -109,23 +128,7 @@ impl Scheduler for MinRttScheduler {
     }
 }
 
-impl Scheduler for RoundRobinScheduler {
-    fn start(&mut self, conn: &quiche::Connection) {
-        self.next = conn.path_stats().count();
-    }
 
-    fn next_path(&mut self, conn: &quiche::Connection) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
-        
-        self.next = if self.next >= conn.path_stats().count() {
-            0
-        } else {
-            self.next + 1
-        };
-        //conn.path_stats().cycle().filter(|p| p.active && p.bytes_in_flight < p.cwnd).nth(self.next).map(|p| (p.local_addr, p.peer_addr))
-        conn.path_stats().nth(self.next).map(|p| (p.local_addr, p.peer_addr))
-        
-    }
-}
 
 struct ECFScheduler {
     waiting: bool,
@@ -134,6 +137,8 @@ struct ECFScheduler {
 impl Scheduler for ECFScheduler {
     fn start(&mut self, conn: &quiche::Connection) {
         // calculate bestpath and secondpath with cwd,rtt,rttvar 
+        conn.path_stats().for_each(|p| debug!("{:?} -> {:?}: cwd: {} srtt: {:?} rttvar: {:?} q: {}", p.local_addr, p.peer_addr, p.cwnd, p.rtt, p.rttvar, conn.send_quantum_on_path(p.local_addr, p.peer_addr)));
+        conn.writable().filter_map(|id| conn.stream_send_offset(id).ok()).for_each(|(max_off, off_back)| debug!("Pending to send: {}", max_off - off_back));
         todo!()
     }
 
