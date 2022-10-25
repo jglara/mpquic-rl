@@ -29,7 +29,7 @@ class QuicheQuic(Experiment):
         
     def get_server_cmd(self, instance):
         #QLOGDIR={csv_path} 
-        cmd="{qlog} RUST_LOG={loglevel} {quichepath}/target/debug/mp_server --listen 10.0.3.10:4433 --cert {quichepath}/src/bin/cert.crt --key {quichepath}/src/bin/cert.key --root {wwwpath} --scheduler {sched} --path-stats-output {output}/path-{i}.csv --conn-stats-output {output}/conn-{i}.csv> {output}/server{i}.log&".format(
+        cmd="{qlog} RUST_LOG={loglevel} {quichepath}/target/debug/mp_server --listen 10.0.3.10:4433 --cert {quichepath}/src/bin/cert.crt --key {quichepath}/src/bin/cert.key --root {wwwpath} --scheduler {sched} --path-stats-output {output}/path-{i}.csv --conn-stats-output {output}/conn-{i}.csv --sched-stats-output {output}/{sched}.csv > {output}/server{i}.log&".format(
             qlog="QLOGDIR={}".format(self.output_dir) if self.qlog else "",
             output=self.output_dir,
             i=instance,

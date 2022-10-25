@@ -32,6 +32,9 @@ struct ServerCli {
 
     #[clap(value_parser, long)]
     conn_stats_output: String, // File to output conn stats
+
+    #[clap(value_parser, long)]
+    sched_stats_output: String, // File to output scheduler stats
 }
 
 const MAX_BUF_SIZE: usize = 65507;
@@ -58,6 +61,8 @@ struct PathStatsRecord<'a> {
     cwnd: usize,
     bif: usize,
     rtt: u128,
+    rttvar: u128,
+    quantum: usize,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -75,6 +80,17 @@ struct ConnStatsRecord<'a> {
     pending: usize,
     max_off: u64,
     off_back: u64,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ECFSchedulerStats {
+    waiting: bool,
+    best_path_blocked: bool,
+    send_on_second_path: bool,
+    term1: usize,
+    term2: usize,
+    term3: usize,
+    term4: usize,
 }
 
 
@@ -132,19 +148,85 @@ impl Scheduler for MinRttScheduler {
 
 struct ECFScheduler {
     waiting: bool,
+    wrt: csv::Writer<std::fs::File>,
 }
 
 impl Scheduler for ECFScheduler {
     fn start(&mut self, conn: &quiche::Connection) {
         // calculate bestpath and secondpath with cwd,rtt,rttvar 
-        conn.path_stats().for_each(|p| debug!("{:?} -> {:?}: cwd: {} srtt: {:?} rttvar: {:?} q: {}", p.local_addr, p.peer_addr, p.cwnd, p.rtt, p.rttvar, conn.send_quantum_on_path(p.local_addr, p.peer_addr)));
-        conn.writable().filter_map(|id| conn.stream_send_offset(id).ok()).for_each(|(max_off, off_back)| debug!("Pending to send: {}", max_off - off_back));
-        todo!()
+        //conn.path_stats().for_each(|p| debug!("{:?} -> {:?}: cwd: {} srtt: {:?} rttvar: {:?} q: {}", p.local_addr, p.peer_addr, p.cwnd, p.rtt, p.rttvar, conn.send_quantum_on_path(p.local_addr, p.peer_addr)));
+        //conn.writable().filter_map(|id| conn.stream_send_offset(id).ok()).for_each(|(max_off, off_back)| debug!("Pending to send: {}", max_off - off_back));
+        
     }
 
     fn next_path(&mut self, conn: &quiche::Connection) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
         // select bestpath, secondpath or nothing if waiting for bestpath is better
-        todo!()
+
+        let mut best_path_blocked = false;
+        let mut send_on_second_path = false;
+        let mut term1 = 0;
+        let mut term2 = 0;
+        let mut term3 = 0;
+        let mut term4 = 0;
+
+
+        if let Some(p) = conn.path_stats().find(|p|p.sent == 0) {
+            Some((p.local_addr, p.peer_addr))
+        } else if conn.path_stats().count() < 2 {
+            conn.path_stats().map(|p| (p.local_addr, p.peer_addr)).next()
+        } else {
+            let best_path = conn.path_stats().filter(|p| p.active).min_by(|p1, p2| p1.rtt.cmp(&p2.rtt) ).unwrap();
+
+            let path = if best_path.cwnd > best_path.bytes_in_flight {
+                Some((best_path.local_addr, best_path.peer_addr))
+            } else {
+                best_path_blocked = true;
+
+                let second_path = conn.path_stats().filter(|p| p.active).max_by(|p1, p2| p1.rtt.cmp(&p2.rtt) ).unwrap();
+                let burst_bytes = conn.send_quantum();
+                let maxrttvar = std::cmp::max(best_path.rttvar.as_millis(), second_path.rttvar.as_millis()) as usize;
+                let best_rtt = best_path.rtt.as_millis() as usize;
+                let second_rtt = second_path.rtt.as_millis() as usize;
+
+                term1 = burst_bytes * best_rtt;
+                term2 = if self.waiting {
+                    ((second_rtt + maxrttvar) / 2 - best_rtt) * best_path.cwnd
+                } else {
+                    ((second_rtt + maxrttvar) - best_rtt) * best_path.cwnd
+                };
+
+                if term1 < term2 {
+                    term3 = burst_bytes * second_rtt;
+                    term4 = (2 * best_rtt + maxrttvar) * second_path.cwnd;
+
+                    if term3 >= term4 {
+                        self.waiting = true;
+                        None
+                    } else {
+                        send_on_second_path= true;
+                        Some((second_path.local_addr, second_path.peer_addr))
+                    }
+                } else {
+                    self.waiting = false;
+                    send_on_second_path= true;
+                    Some((second_path.local_addr, second_path.peer_addr))
+                }
+            };
+
+            self.wrt.serialize(ECFSchedulerStats {
+                    waiting: self.waiting,
+                    best_path_blocked: best_path_blocked,
+                    send_on_second_path: send_on_second_path,
+                    term1: term1,
+                    term2: term2,
+                    term3: term3,
+                    term4: term4,
+            }
+            ).unwrap();
+
+            path
+        }
+        
     }
 }
 
@@ -236,7 +318,9 @@ fn main() {
         "rr" => Box::new(RoundRobinScheduler {next: 0}),
         "minRtt" => Box::new(MinRttScheduler {}),
         "blest" => Box::new(BLESTScheduler {}),
-        "ecf" => Box::new(ECFScheduler {waiting: false}),
+        "ecf" => Box::new(ECFScheduler {waiting: false, 
+                                        wrt: csv::Writer::from_path(cli.sched_stats_output).unwrap()
+                                        }),
         _ => panic!("Invalid scheduler")
     };
     
@@ -570,7 +654,7 @@ fn main() {
 
             //info!("Sending over paths: {:?}", scheduled_tuples);
             client.conn.path_stats().for_each(|p| {
-                let srtt = if p.rtt.as_millis() == 333 {0} else {p.rtt.as_millis()};
+                let (srtt,rttvar) = if p.rtt.as_millis() == 333 {(0,0)} else {(p.rtt.as_millis(), p.rttvar.as_millis())};
 
                 
                 path_stats_wrt.serialize(PathStatsRecord {
@@ -582,6 +666,8 @@ fn main() {
                     cwnd: p.cwnd, 
                     bif: p.bytes_in_flight, 
                     rtt: srtt,
+                    rttvar: rttvar,
+                    quantum: client.conn.send_quantum_on_path(p.local_addr, p.peer_addr),
                 }).unwrap()
             }); 
 
