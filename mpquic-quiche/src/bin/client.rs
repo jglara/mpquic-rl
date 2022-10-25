@@ -186,7 +186,7 @@ fn main() {
 
     debug!("written {}", write);
 
-    let req_start = std::time::Instant::now();
+    let mut req_start = std::time::Instant::now();
 
     let mut req_sent = false;
 
@@ -254,7 +254,8 @@ fn main() {
         }
 
         // Send an HTTP request as soon as the connection is established.
-        if conn.is_established() && !req_sent {
+        if conn.is_established() && !req_sent  && conn.path_stats().count() >= 2 {
+            req_start = std::time::Instant::now();
             info!("sending HTTP request for {}", url.path());
 
             let req = format!("GET {}\r\n", url.path());
