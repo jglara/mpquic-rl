@@ -170,7 +170,7 @@ impl Scheduler for ECFScheduler {
         let mut term4 = 0;
 
 
-        if let Some(p) = conn.path_stats().find(|p|p.sent == 0) {
+        if let Some(p) = conn.path_stats().find(|p|p.sent < 10) {
             Some((p.local_addr, p.peer_addr))
         } else if conn.path_stats().count() < 2 {
             conn.path_stats().map(|p| (p.local_addr, p.peer_addr)).next()
@@ -183,23 +183,20 @@ impl Scheduler for ECFScheduler {
                 best_path_blocked = true;
 
                 let second_path = conn.path_stats().filter(|p| p.active).max_by(|p1, p2| p1.rtt.cmp(&p2.rtt) ).unwrap();
-                let burst_bytes = conn.send_quantum();
+
+                let send_bytes: usize = conn.writable().filter_map(|id| conn.stream_send_offset(id).ok()).map(|(max_off, off_back)| max_off - off_back).sum::<u64>() as usize;
                 let maxrttvar = std::cmp::max(best_path.rttvar.as_millis(), second_path.rttvar.as_millis()) as usize;
                 let best_rtt = best_path.rtt.as_millis() as usize;
                 let second_rtt = second_path.rtt.as_millis() as usize;
 
-                term1 = burst_bytes * best_rtt;
-                term2 = if self.waiting {
-                    ((second_rtt + maxrttvar) / 2 - best_rtt) * best_path.cwnd
-                } else {
-                    ((second_rtt + maxrttvar) - best_rtt) * best_path.cwnd
-                };
+                term1 = (if send_bytes < best_path.cwnd {best_path.cwnd} else {send_bytes} + best_path.cwnd) * best_rtt;
+                term2 = best_path.cwnd * (second_rtt + maxrttvar);
 
-                if term1 < term2 {
-                    term3 = burst_bytes * second_rtt;
-                    term4 = (2 * best_rtt + maxrttvar) * second_path.cwnd;
+                if term1 * 4 < (term2 * 4) + if self.waiting {term2} else {0} {
+                    term3 = if send_bytes < second_path.cwnd {second_path.cwnd} else {send_bytes} * second_rtt;
+                    term4 = ((2 * best_rtt) + maxrttvar) * second_path.cwnd;
 
-                    if term3 >= term4 {
+                    if term3 > term4 {
                         self.waiting = true;
                         None
                     } else {
@@ -295,8 +292,8 @@ fn main() {
     config.set_max_recv_udp_payload_size(MAX_DATAGRAM_SIZE);
     config.set_max_send_udp_payload_size(MAX_DATAGRAM_SIZE);
     config.set_initial_max_data(10_000_000);
-    config.set_initial_max_stream_data_bidi_local(500_000);
-    config.set_initial_max_stream_data_bidi_remote(500_000);
+    config.set_initial_max_stream_data_bidi_local(1_500_000);
+    config.set_initial_max_stream_data_bidi_remote(1_500_000);
     config.set_initial_max_stream_data_uni(1_000_000);
     config.set_initial_max_streams_bidi(100);
     config.set_initial_max_streams_uni(100);
