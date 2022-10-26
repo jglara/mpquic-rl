@@ -6,6 +6,7 @@ use clap::Parser;
 use ring::rand::*;
 use std::net::ToSocketAddrs;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 
 
 #[derive(Parser)]
@@ -22,6 +23,9 @@ struct ClientCli {
 
     #[clap(value_parser, long, short)]
     download_stats_output: String, // File to output download stats
+
+    #[clap(value_parser, long, short)]
+    path_stats_output: String, // File to output client stats
 }
 
 
@@ -31,6 +35,16 @@ struct DownloadStats {
     elapsed: u128,
 }
 
+#[derive(Debug, serde::Serialize)]
+
+struct PathStatsRecord<'a> {
+    elapsed: u128,
+    local: &'a SocketAddr,
+    remote: &'a SocketAddr,
+    recv_bytes: usize,
+    off_front: u64,
+    max_off: u64,
+}
 
 
 const MAX_DATAGRAM_SIZE: usize = 1350;
@@ -44,6 +58,7 @@ fn main() {
     let cli = ClientCli::parse();
 
     let mut stats_wrt = csv::Writer::from_path(cli.download_stats_output).unwrap();
+    let mut path_stats_wrt = csv::Writer::from_path(cli.path_stats_output).unwrap();
 
     let mut buf = [0; 65535];
     let mut out = [0; MAX_DATAGRAM_SIZE];
@@ -241,7 +256,23 @@ fn main() {
                         continue 'read;
                     },
                 };
-                
+
+                let mut max_off=0;
+                let mut off_front= 0;
+                if let Some((max_off_, off_front_)) = conn.readable().filter_map(|id| conn.stream_recv_offset(id).ok() ).next() {
+                    max_off = max_off_;
+                    off_front = off_front_;
+                }
+
+                path_stats_wrt.serialize(PathStatsRecord {
+                    elapsed: req_start.elapsed().as_millis(),
+                    local: &recv_info.to,
+                    remote: &recv_info.from,
+                    recv_bytes: read,
+                    off_front: off_front,
+                    max_off: max_off,
+                }).unwrap();
+
                 debug!("{} processed {} bytes", local_addr, read);
             }
         }
