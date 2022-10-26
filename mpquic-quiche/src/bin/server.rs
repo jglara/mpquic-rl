@@ -97,6 +97,8 @@ struct ECFSchedulerStats {
     term2: usize,
     term3: usize,
     term4: usize,
+    best_path_peer_addr: u16,
+    second_path_peer_addr: u16,
 }
 
 
@@ -197,6 +199,8 @@ impl Scheduler for ECFScheduler {
         let mut second_rtt = 0;
         let mut best_path_cwnd =0;
         let mut second_path_cwnd = 0;
+        let mut best_path_peer_addr= 0;
+        let mut second_path_peer_addr= 0;
 
 
         let path = if let Some(p) = conn.path_stats().find(|p|p.sent < 10) {
@@ -206,6 +210,8 @@ impl Scheduler for ECFScheduler {
         } else {
             let best_path = conn.path_stats().filter(|p| p.active).min_by(|p1, p2| p1.rtt.cmp(&p2.rtt) ).unwrap();
             let second_path = conn.path_stats().filter(|p| p.active).max_by(|p1, p2| p1.rtt.cmp(&p2.rtt) ).unwrap();
+            best_path_peer_addr = best_path.peer_addr.port();
+            second_path_peer_addr = second_path.peer_addr.port();
 
             let send_bytes: usize = conn.writable().filter_map(|id| conn.stream_send_offset(id).ok()).map(|(max_off, off_back)| max_off - off_back).sum::<u64>() as usize;
             let send_bytes_best = if send_bytes < best_path.cwnd {best_path.cwnd} else {send_bytes};
@@ -224,12 +230,12 @@ impl Scheduler for ECFScheduler {
                 best_path_blocked = true;
 
                 
-                term1 = send_bytes_best * best_rtt;
-                term2 = if self.waiting {best_path.cwnd * ((second_rtt + maxrttvar)/2 - best_rtt) } else {best_path.cwnd * (second_rtt + maxrttvar - best_rtt)};
+                term1 = 4 * (send_bytes_best + best_path_cwnd) * best_rtt;
+                term2 = best_path_cwnd * (second_rtt + maxrttvar) * if self.waiting {5} else {4};
 
                 if term1 < term2 {
-                    term3 =  send_bytes_second * second_rtt;
-                    term4 = ((2 * best_rtt) + maxrttvar) * second_path.cwnd;
+                    term3 = send_bytes_second * second_rtt;
+                    term4 = second_path_cwnd * ((2 * best_rtt) + maxrttvar) ;
 
                     if term3 > term4 {
                         self.waiting = true;
@@ -260,6 +266,8 @@ impl Scheduler for ECFScheduler {
             second_path_rtt: second_rtt,
             best_path_cwnd: best_path_cwnd,
             second_path_cwnd: second_path_cwnd,
+            best_path_peer_addr: best_path_peer_addr,
+            second_path_peer_addr: second_path_peer_addr,
             }).unwrap();
 
         path
