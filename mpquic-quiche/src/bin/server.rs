@@ -143,7 +143,7 @@ impl Scheduler for MinRttScheduler {
 
     fn next_path(&mut self, conn: &quiche::Connection) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
         // always try each path at least once
-        if let Some(p) = conn.path_stats().find(|p|p.sent == 0) {
+        if let Some(p) = conn.path_stats().find(|p|p.sent < 3) {
             Some((p.local_addr, p.peer_addr))
         } else {
             conn.path_stats().filter(|p| p.active && p.bytes_in_flight < p.cwnd).min_by(|p1, p2| p1.rtt.cmp(&p2.rtt) )
@@ -203,10 +203,8 @@ impl Scheduler for ECFScheduler {
         let mut second_path_peer_addr= 0;
 
 
-        let path = if let Some(p) = conn.path_stats().find(|p|p.sent < 10) {
+        let path = if let Some(p) = conn.path_stats().find(|p|p.sent < 3) {
             Some((p.local_addr, p.peer_addr))
-        } else if  count < 2 {
-            conn.path_stats().map(|p| (p.local_addr, p.peer_addr)).next()
         } else {
             let best_path = conn.path_stats().filter(|p| p.active).min_by(|p1, p2| p1.rtt.cmp(&p2.rtt) ).unwrap();
             let second_path = conn.path_stats().filter(|p| p.active).max_by(|p1, p2| p1.rtt.cmp(&p2.rtt) ).unwrap();
