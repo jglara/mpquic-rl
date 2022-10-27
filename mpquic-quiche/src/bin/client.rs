@@ -26,6 +26,10 @@ struct ClientCli {
 
     #[clap(value_parser, long, short)]
     path_stats_output: String, // File to output client stats
+
+    #[clap(value_parser, long, short)]
+    max_stream_data: Option<u64>, // Initial max stream data
+   
 }
 
 
@@ -126,8 +130,8 @@ fn main() {
     config.set_max_recv_udp_payload_size(MAX_DATAGRAM_SIZE);
     config.set_max_send_udp_payload_size(MAX_DATAGRAM_SIZE);
     config.set_initial_max_data(10_000_000);
-    config.set_initial_max_stream_data_bidi_local(1_500_000);
-    config.set_initial_max_stream_data_bidi_remote(1_500_000);
+    config.set_initial_max_stream_data_bidi_local(cli.max_stream_data.unwrap_or(1_500_000));
+    config.set_initial_max_stream_data_bidi_remote(cli.max_stream_data.unwrap_or(1_500_000));
     config.set_initial_max_streams_bidi(100);
     config.set_initial_max_streams_uni(100);
     config.set_disable_active_migration(true);

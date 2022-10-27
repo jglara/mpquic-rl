@@ -19,6 +19,7 @@ class QuicheQuic(Experiment):
         self.repeat = params['repeat']
         self.scheduler = params['scheduler']
         self.qlog = params['qlog']
+        self.max_stream_data = params.get("max_stream_data", 0)
 
     def prepare(self):
         super(QuicheQuic, self).prepare()
@@ -44,13 +45,18 @@ class QuicheQuic(Experiment):
     def get_client_cmd(self,instance):
         #SSLKEYLOGFILE={csv_path}/keylog{i}.log 
         #QLOGDIR={csv_path} 
-        cmd="{qlog} RUST_LOG={loglevel} {quichepath}/target/debug/mp_client -l 10.0.1.1:5555 -w 10.0.2.1:6666 --url https://10.0.3.10:4433/{file} --download-stats-output {output}/download-{i}.csv --path-stats-output {output}/client-{i}.csv > {output}/client{i}.log".format(
+        max_stream_data_option = ""
+        if self.max_stream_data != 0:
+            max_stream_data_option = "--max-stream-data {}".format(self.max_stream_data)
+
+        cmd="{qlog} RUST_LOG={loglevel} {quichepath}/target/debug/mp_client -l 10.0.1.1:5555 -w 10.0.2.1:6666 --url https://10.0.3.10:4433/{file} --download-stats-output {output}/download-{i}.csv --path-stats-output {output}/client-{i}.csv {max_stream_data_option}> {output}/client{i}.log".format(
             qlog="QLOGDIR={}".format(self.output_dir) if self.qlog else "",
             output=self.output_dir,
             i=instance,
             quichepath=self.QUICHEPATH, 
             file=self.file_path,
-            loglevel=self.loglevel)
+            loglevel=self.loglevel,
+            max_stream_data_option=max_stream_data_option)
         
         print(cmd)
         return cmd

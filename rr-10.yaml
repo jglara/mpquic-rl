@@ -8,7 +8,7 @@ experiment:
   file: 
     path: test.bin
     size: 10M
-  scheduler: minRtt
+  scheduler: rr
   log:
     level: info
   qlog: no

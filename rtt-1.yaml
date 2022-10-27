@@ -7,7 +7,7 @@ experiment:
     snaplen: 1500
   file: 
     path: test.bin
-    size: 10M
+    size: 1M
   scheduler: minRtt
   log:
     level: info
