@@ -1,0 +1,20 @@
+[package]
+name = "capnp-hello"
+version = "0.1.0"
+edition = "2021"
+build = "src/build.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+capnpc = "0.15"
+
+[dependencies]
+capnp = "0.15"
+capnp-rpc = "0.15"
+futures = "0.3"
+tokio = {version = "1.0.0", features = ["net", "rt", "macros"]}
+tokio-util = {version = "0.7.4", features = ["compat"]}
+
+
+
