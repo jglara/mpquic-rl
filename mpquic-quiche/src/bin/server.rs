@@ -1,6 +1,10 @@
 #[macro_use]
 extern crate log;
 
+pub mod data_capnp {
+    include!(concat!(env!("OUT_DIR"), "/data_capnp.rs"));
+}
+
 use clap::{Parser};
 //use quiche::PathStats;
 use ring::rand::*;
@@ -8,6 +12,16 @@ use ring::rand::*;
 use std::collections::HashMap;
 use std::net::{self, SocketAddr};
 
+
+use std::thread;
+
+use futures::AsyncReadExt;
+use std::net::{ToSocketAddrs};
+use capnp_rpc::{rpc_twoparty_capnp::{self, Side}, twoparty, RpcSystem};
+use crate::data_capnp::{data, scheduler};
+
+use tokio::sync::mpsc;
+use quiche::PathStats;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -120,7 +134,6 @@ impl Scheduler for RoundRobinScheduler {
     }
 
     fn next_path(&mut self, conn: &quiche::Connection) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
-        
         self.next = if self.next >= conn.path_stats().count() {
             0
         } else {
@@ -290,7 +303,43 @@ impl Scheduler for BLESTScheduler {
     }
 }
 
-fn main() {
+struct RLScheduler{
+    tx: mpsc::Sender<Data>,
+    rx: mpsc::Receiver<u8>,
+}
+impl Scheduler for RLScheduler{
+    fn start(&mut self, conn: &quiche::Connection){}
+    fn next_path(&mut self, conn: &quiche::Connection) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
+        let best_path = conn.path_stats().filter(|p| p.active).min_by(|p1, p2| p1.rtt.cmp(&p2.rtt) ).unwrap();
+        let second_path = conn.path_stats().filter(|p| p.active).max_by(|p1, p2| p1.rtt.cmp(&p2.rtt) ).unwrap();
+            
+        let data = Data{
+            best_rtt: best_path.rtt.as_millis() as usize,
+            second_rtt: second_path.rtt.as_millis() as usize,
+        };
+        self.tx.blocking_send(data).ok()?;
+        if let Some(resp) = self.rx.blocking_recv(){
+            if resp == 0{
+                Some((best_path.local_addr, best_path.peer_addr))
+            }
+            else if resp == 1{
+                Some((second_path.local_addr, second_path.peer_addr))
+            }
+            else{
+                None
+            }
+        }
+        else{
+            None
+        }
+    }
+}
+
+struct Data{
+    best_rtt: usize,
+    second_rtt: usize,
+}
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     let cli = ServerCli::parse();
 
@@ -358,6 +407,9 @@ fn main() {
     let mut continue_write = false;
     let mut tx_cap = 0;
 
+    let (tx_c, mut rx_m) = mpsc::channel::<u8>(16);
+    let (tx_m, mut rx_c) = mpsc::channel::<Data>(16);
+
     let mut sched: Box<dyn Scheduler> = match cli.scheduler.as_str() {
         "rr" => Box::new(RoundRobinScheduler {next: 0}),
         "minRtt" => Box::new(MinRttScheduler {}),
@@ -366,9 +418,62 @@ fn main() {
                                         wrt: csv::Writer::from_path(cli.sched_stats_output).unwrap(),
                                         server_start: server_start,
                                         }),
+        "rl" => Box::new(RLScheduler {rx: rx_m,
+                                      tx: tx_m,
+        }),
         _ => panic!("Invalid scheduler")
     };
     
+    //Creation of thread for scheduler RPC
+    
+
+    
+    let addr = "0.0.0.0:6677"
+        .to_socket_addrs()
+        .unwrap()
+        .next()
+        .expect("could not parse address");
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+
+    std::thread::spawn(move || {
+        rt.block_on(async move {
+            let stream = tokio::net::TcpStream::connect(&addr).await.unwrap();
+
+            //println!("Connected to TCP Stream");
+
+            stream.set_nodelay(true).unwrap();
+            let (r, w) =
+                tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
+
+            let network = twoparty::VatNetwork::new(r,w, 
+                    rpc_twoparty_capnp::Side::Client, Default::default());
+    
+            let mut rpc_system = RpcSystem::new(Box::new(network), None);
+            let scheduler: scheduler::Client = rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
+
+            tokio::task::LocalSet::new().run_until( async {
+                tokio::task::spawn_local(rpc_system);
+
+                while let Some(recv_data) = rx_c.recv().await {
+                   let mut request = scheduler.next_path_request();
+
+                   let mut msg = ::capnp::message::Builder::new_default();
+                    let mut d = msg.init_root::<data::Builder>();
+                    d.set_best_rtt(recv_data.best_rtt.try_into().unwrap());
+                    d.set_second_rtt(recv_data.second_rtt.try_into().unwrap());
+
+                   request.get().set_d(d.into_reader()).unwrap();
+                
+                    let reply = request.send().promise.await.unwrap();
+                    
+                    tx_c.send(reply.get().unwrap().get_path()).await.unwrap();
+                }
+            }).await
+
+        });
+    }
+    );
+
     'main: loop {
 
         let timeout = if continue_write {
@@ -743,7 +848,7 @@ fn main() {
                         client.conn.stats()
                     );
 
-                    break 'main;
+                    break 'main Ok(());
     
             }
         }

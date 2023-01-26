@@ -3,6 +3,7 @@ name = "mpquic_apps"
 version = "0.1.0"
 edition = "2021"
 publish = false
+build = "src/build.rs"
 
 [features]
 # Enable quiche's fuzzing mode.
@@ -19,6 +20,9 @@ sfv = ["quiche/sfv"]
 
 default = ["qlog", "sfv"]
 
+[build-dependencies]
+capnpc = "0.15"
+
 [dependencies]
 clap = { version="3.2", features = ["derive"]}
 env_logger = "0.6"
@@ -30,6 +34,11 @@ url = "1"
 itertools = "0.10"
 csv = "1.1"
 serde = { version = "1", features = ["derive"] }
+capnp = "0.15"
+capnp-rpc = "0.15"
+futures = "0.3"
+tokio = {version = "1.0.0", features = ["net", "rt", "macros"]}
+tokio-util = {version = "0.7.4", features = ["compat"]}
 
 [[bin]]
 name = "mp_server"
