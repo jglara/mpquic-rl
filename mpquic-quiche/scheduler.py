@@ -1,6 +1,6 @@
 import capnp
 capnp.remove_import_hook()
-point_capnp = capnp.load("./src/data.capnp")
+point_capnp = capnp.load("./mpquic-quiche/src/data.capnp")
 
 class SchedulerImpl(point_capnp.Scheduler.Server):
     def __init__(self):

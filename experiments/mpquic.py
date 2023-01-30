@@ -1,9 +1,6 @@
-from tkinter import E
 from core.experiment import Experiment
 import os
 import subprocess
-
-from logging import info
 
 
 class QuicheQuic(Experiment):
@@ -69,9 +66,16 @@ class QuicheQuic(Experiment):
 
     def run(self):
         import time
+
+
         n = self.file_size = self.repeat
         for i in range(0,n):
             time.sleep(1)
+            cmd = "python3 {quichepath}/scheduler.py &".format(quichepath=self.QUICHEPATH)
+            print(cmd)
+            self.net.getNodeByName('s1').cmd(cmd)
             self.net.getNodeByName('s1').cmd(self.get_server_cmd(i))
             time.sleep(1)
             self.net.getNodeByName('h1').cmd(self.get_client_cmd(i))
+
+
