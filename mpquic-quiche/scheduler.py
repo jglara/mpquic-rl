@@ -7,7 +7,6 @@ class SchedulerImpl(point_capnp.Scheduler.Server):
         self.rtts = []
 
     def nextPath(self, d, _context, **kwargs):
-        print("d.best_rtt = {} d.second_rtt = {}".format(d.bestRtt, d.secondRtt))
         self.rtts.append((d.bestRtt, d.secondRtt))
 
 
