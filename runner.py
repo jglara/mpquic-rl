@@ -23,7 +23,6 @@ class Runner(object):
 
         self.topo = MultipathTopo(**self.topo_params)
         self.net = Mininet(self.topo, switch=OVSBridge, controller=None)
-        #net.addNAT().configDefault()
     
         self.start_topo()
         if experiment_parameter_file == None:

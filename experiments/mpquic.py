@@ -1,6 +1,26 @@
 from core.experiment import Experiment
 import os
 import subprocess
+from mininet.cli import CLI
+import threading
+
+import capnp
+capnp.remove_import_hook()
+point_capnp = capnp.load("./mpquic-quiche/src/data.capnp")
+
+class SchedulerImpl(point_capnp.Scheduler.Server):
+    def __init__(self):
+        self.rtts = []
+
+    def nextPath(self, d, _context, **kwargs):
+        #print("d.best_rtt = {} d.second_rtt = {}".format(d.bestRtt, d.secondRtt))
+        self.rtts.append((d.bestRtt, d.secondRtt))
+        return 0
+
+def run_forever():    
+    addr=("*:6677")
+    server = capnp.TwoPartyServer(addr, bootstrap=SchedulerImpl())
+    server.run_forever()
 
 
 class QuicheQuic(Experiment):
@@ -58,7 +78,7 @@ class QuicheQuic(Experiment):
         print(cmd)
         return cmd
 
-    def clean(self):
+    def clean(self):    
         super(QuicheQuic, self).clean()
         self.net.getNodeByName('s1').cmd("rm {path}".format(
             path= self.file_path))
@@ -67,15 +87,21 @@ class QuicheQuic(Experiment):
     def run(self):
         import time
 
-
+        # start rpc server                 
+        t = threading.Thread(target=run_forever)
+        t.daemon = True
+        t.start()
+        
         n = self.file_size = self.repeat
         for i in range(0,n):
             time.sleep(1)
-            cmd = "python3 {quichepath}/scheduler.py &".format(quichepath=self.QUICHEPATH)
-            print(cmd)
-            self.net.getNodeByName('s1').cmd(cmd)
-            self.net.getNodeByName('s1').cmd(self.get_server_cmd(i))
+            #cmd = "python3 {quichepath}/scheduler.py &".format(quichepath=self.QUICHEPATH)
+            #print(cmd)
+            #self.net.getNodeByName('s1').cmd(cmd)
             time.sleep(1)
+            self.net.getNodeByName('s1').cmd(self.get_server_cmd(i))
+            
             self.net.getNodeByName('h1').cmd(self.get_client_cmd(i))
+            #CLI(self.net)
 
 
